@@ -47,8 +47,8 @@ struct LightingBufferObject {
     glm::vec3 lightPos;
     glm::vec3 viewPos;
     glm::vec3 lightColor;
-    alignas(16) float ambientStrength;
-    alignas(16) float specularStrength;
+    float ambientStrength;
+    float specularStrength;
 };
 
 class VulkanApp {
@@ -149,10 +149,10 @@ private:
 
     // Helper functions
     std::vector<char> readFile(const std::string& filename);
-    bool isDeviceSuitable(VkPhysicalDevice device);
-    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
-    bool checkDeviceExtensionSupport(VkPhysicalDevice device);
-    SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
+    bool isDeviceSuitable(VkPhysicalDevice physicalDev);
+    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice physicalDev);
+    bool checkDeviceExtensionSupport(VkPhysicalDevice physicalDev);
+    SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice physicalDev);
     VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
     VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);

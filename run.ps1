@@ -13,8 +13,13 @@ if (!(Test-Path $exePath)) {
     exit 1
 }
 
-# Run the application
+# Run the application from the build directory to ensure correct working directory
 Write-Host "Running Vulkan App..." -ForegroundColor Green
-& $exePath
+Push-Location "$buildDir/$Config"
+try {
+    & ".\$exeName"
+} finally {
+    Pop-Location
+}
 
 Write-Host "Application exited." -ForegroundColor Green
