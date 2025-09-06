@@ -9,24 +9,25 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include <iostream>
 #include <vector>
-#include <stdexcept>
-#include <cstdlib>
-#include <cstring>
 #include <optional>
-#include <set>
-#include <algorithm>
-#include <fstream>
 #include <chrono>
 
 #include "Mesh.h"
+#include "VulkanException.h"
+
+// Enable validation layers in debug builds
+#ifdef NDEBUG
+    const bool enableValidationLayers = false;
+#else
+    const bool enableValidationLayers = true;
+#endif
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;
 
-    bool isComplete() {
+    [[nodiscard]] bool isComplete() const {
         return graphicsFamily.has_value() && presentFamily.has_value();
     }
 };
@@ -41,6 +42,7 @@ struct UniformBufferObject {
     glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
+    glm::mat3 normalMatrix;
 };
 
 struct LightingBufferObject {
@@ -62,6 +64,10 @@ private:
     const char* WINDOW_TITLE = "Vulkan App";
     bool framebufferResized = false;
 
+    // Validation layers
+    const std::vector<const char*> validationLayers = {"VK_LAYER_KHRONOS_validation"};
+    VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
+    
     // Vulkan components
     GLFWwindow* window;
     VkInstance instance;
@@ -93,10 +99,13 @@ private:
     // Sync objects
     const int MAX_FRAMES_IN_FLIGHT = 2;
     size_t currentFrame = 0;
+    
+    // Per-frame synchronization (for CPU-GPU sync)
+    std::vector<VkFence> inFlightFences;
+    
+    // Per-image synchronization (for proper swapchain image handling)
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
-    std::vector<VkFence> inFlightFences;
-    std::vector<VkFence> imagesInFlight;
 
     // Cube mesh
     Mesh cubeMesh;
@@ -126,6 +135,22 @@ private:
     // Vulkan setup functions
     void createInstance();
     void setupDebugMessenger();
+    
+    // Debug helper functions
+    bool checkValidationLayerSupport() const;
+    std::vector<const char*> getRequiredExtensions() const;
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+        VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT messageType,
+        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+        void* pUserData);
+    VkResult createDebugUtilsMessengerEXT(VkInstance inst, 
+        const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, 
+        const VkAllocationCallbacks* pAllocator, 
+        VkDebugUtilsMessengerEXT* pDebugMessenger);
+    void destroyDebugUtilsMessengerEXT(VkInstance inst, 
+        VkDebugUtilsMessengerEXT debugMsg, 
+        const VkAllocationCallbacks* pAllocator);
     void createSurface();
     void pickPhysicalDevice();
     void createLogicalDevice();

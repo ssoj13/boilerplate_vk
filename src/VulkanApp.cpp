@@ -3,6 +3,8 @@
 #include <stdexcept>
 #include <fstream>
 #include <array>
+#include <set>
+#include <cstring>
 
 void VulkanApp::run() {
     std::cout << "Initializing window..." << std::endl;
@@ -88,10 +90,15 @@ void VulkanApp::cleanup() {
 
     cubeMesh.cleanup(device);
 
+    // Destroy per-frame fences
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        vkDestroyFence(device, inFlightFences[i], nullptr);
+    }
+    
+    // Destroy per-image semaphores
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
         vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
         vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
-        vkDestroyFence(device, inFlightFences[i], nullptr);
     }
 
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
@@ -106,6 +113,11 @@ void VulkanApp::cleanup() {
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
     vkDestroyCommandPool(device, commandPool, nullptr);
     vkDestroyDevice(device, nullptr);
+    
+    if (enableValidationLayers) {
+        destroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+    }
+    
     vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyInstance(instance, nullptr);
 
@@ -115,6 +127,11 @@ void VulkanApp::cleanup() {
 
 void VulkanApp::createInstance() {
     std::cout << "  Creating Vulkan instance..." << std::endl;
+    
+    if (enableValidationLayers && !checkValidationLayerSupport()) {
+        throw std::runtime_error("Validation layers requested, but not available!");
+    }
+
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "Vulkan App";
@@ -127,26 +144,56 @@ void VulkanApp::createInstance() {
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
 
-    uint32_t glfwExtensionCount = 0;
-    const char** glfwExtensions;
-    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+    auto extensions = getRequiredExtensions();
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+    createInfo.ppEnabledExtensionNames = extensions.data();
 
-    std::cout << "  GLFW extension count: " << glfwExtensionCount << std::endl;
-    createInfo.enabledExtensionCount = glfwExtensionCount;
-    createInfo.ppEnabledExtensionNames = glfwExtensions;
-
-    createInfo.enabledLayerCount = 0;
-
-    VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
-    if (result != VK_SUCCESS) {
-        std::cerr << "  Failed to create instance! Error code: " << result << std::endl;
-        throw std::runtime_error("failed to create instance!");
+    std::cout << "  Required extensions:" << std::endl;
+    for (const auto& extension : extensions) {
+        std::cout << "    " << extension << std::endl;
     }
+
+    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
+    if (enableValidationLayers) {
+        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+        createInfo.ppEnabledLayerNames = validationLayers.data();
+
+        debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        debugCreateInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | 
+                                          VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | 
+                                          VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        debugCreateInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | 
+                                     VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | 
+                                     VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        debugCreateInfo.pfnUserCallback = debugCallback;
+        createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debugCreateInfo;
+
+        std::cout << "  Validation layers enabled" << std::endl;
+    } else {
+        createInfo.enabledLayerCount = 0;
+        createInfo.pNext = nullptr;
+        std::cout << "  Validation layers disabled" << std::endl;
+    }
+
+    VK_CHECK_RESULT(vkCreateInstance(&createInfo, nullptr, &instance));
     std::cout << "  Instance created successfully!" << std::endl;
 }
 
 void VulkanApp::setupDebugMessenger() {
-    // For simplicity, we're not setting up debug messenger in this minimal example
+    if (!enableValidationLayers) return;
+
+    VkDebugUtilsMessengerCreateInfoEXT createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | 
+                                VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | 
+                                VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | 
+                            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | 
+                            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    createInfo.pfnUserCallback = debugCallback;
+
+    VK_CHECK(createDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger),
+             "Failed to set up debug messenger!");
 }
 
 void VulkanApp::createSurface() { if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) { throw std::runtime_error("failed to create window surface!"); } }
@@ -717,10 +764,12 @@ void VulkanApp::createCommandBuffers() {
 }
 
 void VulkanApp::createSyncObjects() {
-    imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    // Create per-frame fences (for CPU-GPU synchronization)
     inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
-    imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
+    
+    // Create per-image semaphores (for proper swapchain synchronization)
+    imageAvailableSemaphores.resize(swapChainImages.size());
+    renderFinishedSemaphores.resize(swapChainImages.size());
 
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -729,10 +778,15 @@ void VulkanApp::createSyncObjects() {
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
+    // Create per-frame fences
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
-            vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) { throw std::runtime_error("failed to create synchronization objects for a frame!"); }
+        VK_CHECK_RESULT(vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]));
+    }
+    
+    // Create per-image semaphores
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+        VK_CHECK_RESULT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]));
+        VK_CHECK_RESULT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]));
     }
 }
 
@@ -740,7 +794,9 @@ void VulkanApp::drawFrame() {
     vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
     uint32_t imageIndex;
-    VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+    // Use per-frame semaphore for acquire (we don't know imageIndex yet)
+    VkSemaphore imageAvailableSemaphore = imageAvailableSemaphores[currentFrame % swapChainImages.size()];
+    VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapChain();
@@ -751,15 +807,11 @@ void VulkanApp::drawFrame() {
     // Update uniform buffers
     updateUniformBuffer(imageIndex);
 
-    // Check if a previous frame is using this image (i.e. there is its fence to wait on)
-    if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) { vkWaitForFences(device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX); }
-    // Mark the image as now being in use by this frame
-    imagesInFlight[imageIndex] = inFlightFences[currentFrame];
-
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]};
+    // Use the same semaphore that was used for acquire
+    VkSemaphore waitSemaphores[] = {imageAvailableSemaphore};
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;
@@ -768,7 +820,8 @@ void VulkanApp::drawFrame() {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
 
-    VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame]};
+    // Use per-image semaphore for signaling (now we know imageIndex)
+    VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[imageIndex]};
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
@@ -811,6 +864,9 @@ void VulkanApp::updateUniformBuffer(uint32_t currentImage) {
     ubo.view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
     ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
     ubo.proj[1][1] *= -1; // Flip Y for Vulkan
+    
+    // Pre-calculate normal matrix on CPU (much more efficient than GPU per-vertex calculation)
+    ubo.normalMatrix = glm::mat3(glm::transpose(glm::inverse(ubo.model)));
 
     void* data;
     vkMapMemory(device, uniformBuffersMemory[currentImage], 0, sizeof(ubo), 0, &data);
@@ -979,4 +1035,115 @@ void VulkanApp::cleanupSwapChain() {
     for (auto imageView : swapChainImageViews) { vkDestroyImageView(device, imageView, nullptr); }
 
     vkDestroySwapchainKHR(device, swapChain, nullptr);
+}
+
+// Validation layer support functions
+bool VulkanApp::checkValidationLayerSupport() const {
+    uint32_t layerCount;
+    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+
+    std::vector<VkLayerProperties> availableLayers(layerCount);
+    vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+    for (const char* layerName : validationLayers) {
+        bool layerFound = false;
+
+        for (const auto& layerProperties : availableLayers) {
+            if (strcmp(layerName, layerProperties.layerName) == 0) {
+                layerFound = true;
+                break;
+            }
+        }
+
+        if (!layerFound) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::vector<const char*> VulkanApp::getRequiredExtensions() const {
+    uint32_t glfwExtensionCount = 0;
+    const char** glfwExtensions;
+    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+    std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+
+    if (enableValidationLayers) {
+        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
+
+    return extensions;
+}
+
+VKAPI_ATTR VkBool32 VKAPI_CALL VulkanApp::debugCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+    void* pUserData) {
+    
+    (void)pUserData; // Suppress unused parameter warning
+    
+    std::string severity;
+    switch (messageSeverity) {
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+            severity = "VERBOSE";
+            break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+            severity = "INFO";
+            break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+            severity = "WARNING";
+            break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+            severity = "ERROR";
+            break;
+        default:
+            severity = "UNKNOWN";
+            break;
+    }
+
+    std::string type;
+    switch (messageType) {
+        case VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT:
+            type = "GENERAL";
+            break;
+        case VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT:
+            type = "VALIDATION";
+            break;
+        case VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT:
+            type = "PERFORMANCE";
+            break;
+        default:
+            type = "UNKNOWN";
+            break;
+    }
+
+    std::cerr << "[VULKAN " << severity << " " << type << "] " << pCallbackData->pMessage << std::endl;
+
+    return VK_FALSE;
+}
+
+VkResult VulkanApp::createDebugUtilsMessengerEXT(VkInstance inst,
+    const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkDebugUtilsMessengerEXT* pDebugMessenger) {
+    
+    auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(inst, "vkCreateDebugUtilsMessengerEXT");
+    if (func != nullptr) {
+        return func(inst, pCreateInfo, pAllocator, pDebugMessenger);
+    } else {
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    }
+}
+
+void VulkanApp::destroyDebugUtilsMessengerEXT(VkInstance inst,
+    VkDebugUtilsMessengerEXT debugMsg,
+    const VkAllocationCallbacks* pAllocator) {
+    
+    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(inst, "vkDestroyDebugUtilsMessengerEXT");
+    if (func != nullptr) {
+        func(inst, debugMsg, pAllocator);
+    }
 }
