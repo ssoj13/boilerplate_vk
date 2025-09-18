@@ -51,6 +51,11 @@ jobs:
       run: |
         cmake --build build --config Release
 
+    - name: List build output
+      shell: powershell
+      run: |
+        Get-ChildItem -Recurse build/Release
+
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -58,4 +63,5 @@ jobs:
         path: |
           build/Release/*.exe
           build/Release/*.spv
+          build/Release/*.dll
         retention-days: 7
