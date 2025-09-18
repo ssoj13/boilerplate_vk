@@ -22,7 +22,7 @@ jobs:
         $url = "https://sdk.lunarg.com/sdk/download/1.4.321.1/windows/vulkansdk-windows-X64-1.4.321.1.exe"
         $output = "$env:TEMP\VulkanSDK.exe"
         Invoke-WebRequest -Uri $url -OutFile $output
-        Start-Process -FilePath $output -ArgumentList "/S", "-t", "C:\VulkanSDK\1.4.321.1" -Wait -NoNewWindow
+        Start-Process -FilePath $output -ArgumentList "--root", "C:\VulkanSDK\1.4.321.1", "--accept-licenses", "--default-answer", "--confirm-command", "install" -Wait -NoNewWindow -Verb RunAs
 
         # Add Vulkan to PATH
         $vulkanPath = "C:\VulkanSDK\1.4.321.1\Bin"
