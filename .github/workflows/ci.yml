@@ -29,8 +29,7 @@ jobs:
         vcpkgGitURL: 'https://github.com/Microsoft/vcpkg.git'
         vcpkgGitCommitId: 'a923876489993098f7b53608377424175227912d'
         runVcpkgInstall: true
-        vcpkgTriplet: 'x64-windows'
-        additionalVcpkgInstallArgs: 'glfw3 glm'
+        vcpkgJsonGlob: '**/vcpkg.json'
 
     - name: Configure CMake
       shell: powershell

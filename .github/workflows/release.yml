@@ -27,18 +27,14 @@ jobs:
         $vulkanPath = "C:\VulkanSDK\1.3.290.0\Bin"
         echo "$vulkanPath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-    - name: Setup vcpkg
-      shell: powershell
-      run: |
-        git clone https://github.com/Microsoft/vcpkg.git
-        .\vcpkg\bootstrap-vcpkg.bat
-        echo "VCPKG_ROOT=$((Get-Location).Path)\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-    - name: Install dependencies
-      shell: powershell
-      run: |
-        .\vcpkg\vcpkg.exe install glfw3:x64-windows
-        .\vcpkg\vcpkg.exe install glm:x64-windows
+    - name: Setup vcpkg and install dependencies
+      uses: lukka/run-vcpkg@v11
+      with:
+        vcpkgDirectory: '${{ github.workspace }}/vcpkg'
+        vcpkgGitURL: 'https://github.com/Microsoft/vcpkg.git'
+        vcpkgGitCommitId: 'a923876489993098f7b53608377424175227912d'
+        runVcpkgInstall: true
+        vcpkgJsonGlob: '**/vcpkg.json'
 
     - name: Configure CMake
       shell: powershell
