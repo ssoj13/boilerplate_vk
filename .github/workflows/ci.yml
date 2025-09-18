@@ -22,11 +22,27 @@ jobs:
         $url = "https://sdk.lunarg.com/sdk/download/1.4.321.1/windows/vulkansdk-windows-X64-1.4.321.1.exe"
         $output = "$env:TEMP\VulkanSDK.exe"
         Invoke-WebRequest -Uri $url -OutFile $output
-        Start-Process -FilePath $output -ArgumentList "--root", "C:\VulkanSDK\1.4.321.1", "--accept-licenses", "--default-answer", "--confirm-command", "install" -Wait -NoNewWindow -Verb RunAs
+        Start-Process -FilePath $output -ArgumentList "--root", "C:\VulkanSDK\1.4.321.1", "--accept-licenses", "--default-answer", "--confirm-command", "install" -Wait -NoNewWindow -WindowStyle Hidden
+
+        # Check if installation was successful
+        if (!(Test-Path "C:\VulkanSDK\1.4.321.1")) {
+            Write-Error "Vulkan SDK installation failed"
+            exit 1
+        }
 
         # Add Vulkan to PATH
         $vulkanPath = "C:\VulkanSDK\1.4.321.1\Bin"
         echo "$vulkanPath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+        # Verify Vulkan SDK installation
+        if (!(Test-Path "$vulkanPath\vulkan-1.dll")) {
+            Write-Error "Vulkan runtime not found"
+            exit 1
+        }
+        if (!(Test-Path "C:\VulkanSDK\1.4.321.1\Lib\vulkan-1.lib")) {
+            Write-Error "Vulkan library not found"
+            exit 1
+        }
 
     - name: Setup vcpkg
       shell: powershell
