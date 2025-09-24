@@ -15,12 +15,27 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v5
 
+    - name: Cache Vulkan SDK
+      id: cache-vulkan
+      uses: actions/cache@v3
+      with:
+        path: C:\VulkanSDK
+        key: vulkan-sdk-1.4.321.1-windows
+
     - name: Install Vulkan SDK
+      if: steps.cache-vulkan.outputs.cache-hit != 'true'
       uses: humbletim/setup-vulkan-sdk@v1.2.1
       with:
         vulkan-query-version: 1.4.321.1
         vulkan-components: Vulkan-Headers, Vulkan-Loader, Glslang, SPIRV-Tools
         vulkan-use-cache: true
+
+    - name: Cache vcpkg
+      id: cache-vcpkg
+      uses: actions/cache@v3
+      with:
+        path: ${{ github.workspace }}/vcpkg
+        key: vcpkg-${{ hashFiles('**/vcpkg.json') }}
 
     - name: Setup vcpkg and install dependencies
       uses: lukka/run-vcpkg@v11
