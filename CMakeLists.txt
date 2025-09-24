@@ -9,8 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
 # Find packages
-find_package(glfw3 CONFIG REQUIRED)
-find_package(glm CONFIG REQUIRED)
+find_package(glfw3 REQUIRED)
+find_package(glm REQUIRED)
 find_package(Vulkan REQUIRED)
 
 # Include directories
@@ -43,8 +43,9 @@ add_executable(${PROJECT_NAME}
 )
 
 # Link libraries
-target_link_libraries(${PROJECT_NAME} 
+target_link_libraries(${PROJECT_NAME}
     glfw
+    glm::glm
     ${Vulkan_LIBRARIES}
 )
 

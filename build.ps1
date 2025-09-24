@@ -11,16 +11,18 @@ if ($Clean -and (Test-Path $buildDir)) {
     Remove-Item -Recurse -Force $buildDir
 }
 
-# Create build directory
-if (!(Test-Path $buildDir)) {
-    New-Item -ItemType Directory -Path $buildDir | Out-Null
+# Install Conan dependencies
+Write-Host "Installing Conan dependencies..." -ForegroundColor Green
+conan install . --build=missing
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Conan install failed!" -ForegroundColor Red
+    exit 1
 }
 
-# Configure with CMake
-Write-Host "Configuring project..." -ForegroundColor Green
-cmake -B $buildDir -S . `
-    -DCMAKE_BUILD_TYPE=$Config `
-    -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake"
+# Configure with CMake using Conan preset
+Write-Host "Configuring project with Conan..." -ForegroundColor Green
+cmake --preset conan-default
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Configuration failed!" -ForegroundColor Red
